@@ -1,0 +1,200 @@
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.Writer;
+import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class W03Practical {
+
+    public static void main(String[] args) {
+        if (!(args.length == 2 || args.length == 3)) { // If args.length is neither 2 nor 3 (i.e. invalid input)
+            System.out.println("Usage: java W03Practical <input_file> <output_file>");
+            System.exit(0);
+        }
+
+        try {
+            readFile(args);
+        } catch (IOException e){ // Should only trigger if file input is invalid; other potential exceptions handled in subsequent methods
+            System.out.println("IO Exception: file in unexpected format or not found");
+        } catch (ArrayIndexOutOfBoundsException e) {
+            System.out.println("Read failed: make sure file in CSV format");
+        }
+    }
+
+    // Method does all reading and writing
+    // checkErrors() handles possible errors relating to empty values in input file
+    public static void readFile(String[] args) throws IOException { // IOException handled in main method
+        // Defining blank structures for later
+        String[] csvValues = new String[6];
+        List<Item> itemObjects = new ArrayList<Item>();
+        List<Invoice> invoices = new ArrayList<Invoice>();
+        String line = "";
+        String csvFile = "";
+        String outputFile = "";
+        String errorFile = "";
+
+        csvFile = args[0]; // Input and output files
+        outputFile = args[1];
+
+        int lineIndex = 1; // Keeps track of what line we're reading for error reporting purposes; starts at 1 because values start on line 2
+        int quantityAsInt = 0; // For when we parse quantity string to int
+        double unitPriceAsDouble = 0; // Same for unit price to double
+        double totalInvPrice = 0; // Total price for invoice we're processing
+        String readInvoiceNo = null; // This and below for tracking when we're changing from one invoiceNo to another
+        String loggedInvoiceNo = null;
+
+        if (args.length == 3) { // If user gives error log filename in 3rd argument
+            errorFile = args[2];
+        } else {
+            errorFile = "errorlog.txt";
+        }
+
+        BufferedReader br = new BufferedReader(new FileReader(csvFile));
+        Writer w = new FileWriter(outputFile);
+        Writer errorW = new FileWriter(errorFile);
+
+        br.readLine(); // Because our values start on line 2
+
+        while ((line = br.readLine()) != null) {
+            csvValues = line.split(",");
+            lineIndex++;
+            readInvoiceNo = csvValues[0];
+            checkErrors(csvValues, lineIndex, errorW); // Every time around loop check for blank strings
+            if (loggedInvoiceNo != null && !(readInvoiceNo.equals(loggedInvoiceNo))) { // If we're changing invoices
+                Invoice inv = new Invoice(loggedInvoiceNo, totalInvPrice);
+                invoices.add(inv); // Adds invoice to collection for later when we're looking for max and min invoice total
+                emptyAndPrintInvoice(itemObjects, w, totalInvPrice); // Prints items in, and empties, itemObjects
+                totalInvPrice = 0; // Zeroes invoice price counter
+            }
+
+            quantityAsInt = Integer.parseInt(csvValues[3]);
+            unitPriceAsDouble = Double.parseDouble(csvValues[5]);
+
+            logItem(csvValues, itemObjects, quantityAsInt, unitPriceAsDouble); // Adds item to itemObjects list
+            loggedInvoiceNo = csvValues[0];
+            totalInvPrice = totalInvPrice + (quantityAsInt * unitPriceAsDouble);
+        }
+
+        // We need to print items we've collected one last time once loop ends, otherwise we won't output the last invoice
+        emptyAndPrintInvoice(itemObjects, w, totalInvPrice);
+        Invoice inv = new Invoice(loggedInvoiceNo, totalInvPrice);
+        invoices.add(inv);
+
+        printMinMax(invoices, w);
+        w.write("\n"); // For newline at end of file
+
+        w.close();
+        errorW.close();
+    }
+
+    // Makes new item with csvValues[] for parameters, adds to collection
+    public static void logItem(String[] csvValues, List<Item> itemObjects, int quantityAsInt, double unitPriceAsDouble) {
+        Item item = new Item(csvValues[0], csvValues[1], csvValues[2], quantityAsInt, unitPriceAsDouble);
+        itemObjects.add(item);
+    }
+
+    // Iterates through collection and calls printDetails() associated with Item object
+    public static void emptyAndPrintInvoice(List<Item> itemObjects, Writer w, double totalInvPrice) {
+        try {
+            for (int i = 0; i < itemObjects.size(); i++) {
+                itemObjects.get(i).printDetails(w);
+            }
+            w.write("Total Price: " + totalInvPrice + "\n\n");
+            itemObjects.clear();
+        } catch (IOException e) {
+            System.out.println("IO Exception: file in unexpected format or not found");
+        }
+    }
+
+    // Prints highest and lowest invoice to end of file
+    public static void printMinMax(List<Invoice> invoices, Writer w) {
+        Invoice minInv = findLowest(invoices);
+        Invoice maxInv = findHighest(invoices);
+
+        String minNo = minInv.getInvoiceNo();
+        String maxNo = maxInv.getInvoiceNo();
+
+        double minValue = minInv.getInvPrice();
+        double maxValue = maxInv.getInvPrice();
+
+        try {
+            w.write("Minimum priced Invoice Number: " + minNo + " with " + minValue + "\n");
+            w.write("Maximum priced Invoice Number: " + maxNo + " with " + maxValue);
+        } catch (IOException e) {
+            System.out.println("IO Exception: file in unexpected format or not found");
+        }
+    }
+
+    // Finds highest total price value among all invoices, returns the invoiceNo associated with that value
+    public static Invoice findHighest(List<Invoice> invoices) {
+        double max = 0;
+        Invoice highest = new Invoice("", 0);
+
+        for (int i = 0; i < invoices.size(); i++) { // Setting starting value to zero conveniently excludes all below-zero invoice values
+            if (invoices.get(i).getInvPrice() > max) {
+                max = invoices.get(i).getInvPrice();
+                highest = invoices.get(i);
+            }
+        }
+
+        return highest;
+    }
+
+    // Same as above for lowest
+    public static Invoice findLowest(List<Invoice> invoices) {
+        double min = Double.MAX_VALUE; // So we can potentially handle very large invoices
+        Invoice lowest = new Invoice("", 0);
+
+        for (int i = 0; i < invoices.size(); i++) {
+           double check = invoices.get(i).getInvPrice();
+            if (check < min && check > 0) {
+                min = check;
+                lowest = invoices.get(i);
+            }
+        }
+
+        return lowest;
+    }
+
+    // Iterates over csvValues, detects if there are any empty strings, if so passes to below with errorCode equal to array location
+    public static void checkErrors(String[] csvValues, int lineIndex, Writer errorW) {
+        for (int i = 0; i < 6; i++) {
+            if (csvValues[i].equals("")) {
+                handleError(csvValues, i, lineIndex, errorW);
+            }
+        }
+    }
+
+    // Prints error information to log and sets empty quantity and unit price values to 0
+    // Log example: Warning when processing line 3 for Invoice Number: 536365, missing Unit Price treated as 0
+    public static void handleError(String[] csvValues, int errorCode, int lineIndex, Writer errorW) {
+            String errorString1 = "";
+            String errorString2 = "blank";
+            switch (errorCode) {
+                case 0: errorString1 = "Invoice Number";
+                        break;
+                case 1: errorString1 = "Stock Code";
+                        break;
+                case 2: errorString1 = "Description";
+                        break;
+                case 3: errorString1 = "Quantity";
+                        errorString2 = "0";
+                        csvValues[3] = "0";
+                        break;
+                case 5: errorString1 = "Unit Price"; // Skips from case 3 to 5 because we're skipping over date field
+                        errorString2 = "0";
+                        csvValues[5] = "0";
+                        break;
+            }
+            try {
+                errorW.write("Warning when processing line " + lineIndex + " for Invoice Number: " + csvValues[0] + ", missing " + errorString1 + " treated as " + errorString2 + "\n");
+            } catch (IOException e) {
+                System.out.println("IO Exception: file in unexpected format or not found");
+            }
+    }
+
+}
